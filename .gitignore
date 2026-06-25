@@ -1,0 +1,23 @@
+# Build / saída de compilação
+Radio_Master/build/
+*.elf
+*.map
+*.bin
+*.hex
+*.o
+*.obj
+
+# Cache de ferramentas
+**/.cache/
+.clangd/
+
+# Backups / pacotes
+*.zip
+
+# Obsidian (cache de workspace, mantém config)
+Cerebro/.obsidian/workspace*
+Cerebro/.obsidian/cache
+
+# SO
+.DS_Store
+Thumbs.db
