@@ -24,12 +24,9 @@ created: 2026-06-25
 
 ---
 
-### 2026-06-25 — RX-com-dump VALIDADO em bancada ✅
-- **Resultado:** ✅ recepção funcionando, **todos os frames com CRC OK** (nenhum ERR). Saída na USART2:
-  ```
-  [RX] type=0x3A len=13 crc=OK
-  [RX] type=0x14 len=12 crc=OK
-  [RX] type=0x08 len=10 crc=OK
-  ```
-- **Novo frame descoberto:** `0x08` Battery Sensor — **não** tinha aparecido no analisador. O dump no próprio MCU revelou mais que o analisador.
-- **Ordem real:** `0x3A`/`0x
+### 2026-06-25 — Parse estruturado de 0x08 e 0x3A VALIDADO ✅
+- **Arquivos:** `Core/Src/crsf.c`, `Core/Inc/crsf.h`.
+- **0x08 Battery** → `[BATT] 5.8V 0.0A 0mAh 0%` (struct `g_batt`).
+- **0x3A Timing** → `[TIME] interval=6666.0 us (150 Hz) offset=... us` (struct `g_timing`; header estendido tratado).
+- **Resultado:** ✅ os três tipos decodificam corretamente e ao vivo.
+- **Observação importante — offset do timing oscila muito** (

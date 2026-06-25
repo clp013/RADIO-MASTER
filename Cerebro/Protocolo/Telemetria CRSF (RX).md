@@ -108,6 +108,8 @@ GPS Time `0x03`, GPS Extended `0x06`, Vario `0x07`, Baro/VSpeed `0x09`, Airspeed
 
 > [!tip] Implicação de design — sincronismo de fase
 > Este frame é o mecanismo de **RC-sync** do EdgeTX: o módulo informa a taxa (150 Hz, igual ao `CRSF_RATE_HZ` atual) e pede que o handset **alinhe a fase** do envio usando `offset`. Hoje o firmware usa `osDelay` fixo; usar `update_interval`/`offset` para deslizar a fase até o offset → 0 reduz latência. Opcional para funcionar, recomendado para link ótimo. Candidato a ADR-005.
+>
+> **Confirmado em bancada (2026-06-25, parse na serial):** o `offset` oscila de −6040 a +4161 µs (≈ ±1 período) enquanto `interval` fica cravado em 6666 µs → o TX está **livre, não travado em fase**. Agravado por `CRSF_RATE_MS=1000/150=6` (trunca → ~166 Hz). Não quebra o link (LQ 100%), só latência não-ótima.
 
 > [!success] 0x14 Link Statistics — confirmado
 > Header simples: `sync=0xC8 len=0x0C type=0x14` + 10 bytes payload + CRC.
@@ -169,9 +171,4 @@ A forma confiável de saber o que o Ranger Nano envia é um **modo diagnóstico*
 
 Assim a lista acima deixa de ser teórica. O desenho dessa recepção está em [[Recepção CRSF Half-Duplex]].
 
-## Relacionadas
-- [[Protocolo CRSF]] · [[Driver CRSF]] · [[Recepção CRSF Half-Duplex]] · [[Questões em Aberto]]
-
-## Fontes
-- [TBS CRSF spec (oficial)](https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md)
-- [ExpressLRS crsf_protocol.h](https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h)
+## Rela
