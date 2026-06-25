@@ -38,12 +38,17 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 ### Protocolo
 - [[Protocolo CRSF]]
 - [[Protocolo USB JSON]]
+- [[Telemetria CRSF (RX)]]
+
+### Firmware (RX / telemetria)
+- [[Recepção CRSF Half-Duplex]]
 
 ### Decisões técnicas
 - [[ADR-000 Template]]
 - [[ADR-001 Transporte CRSF por USART1 Half-Duplex]]
 - [[ADR-002 Host envia JSON via USB CDC]]
 - [[ADR-003 Estratégia de Failsafe]]
+- [[ADR-004 Recepção de Telemetria (modo dump)]]
 
 ### Testes
 - [[Plano de Testes]]
@@ -65,8 +70,4 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 > - Failsafe por timeout e por `seq` congelado
 
 > [!todo] Pendências conhecidas
-> Ver [[Questões em Aberto]] — inclui divergência no timeout de failsafe e o busy-wait no TX.
-
-## 🏷️ Tags principais
-
-`#hardware` `#firmware` `#protocolo/crsf` `#protocolo/usb` `#freertos` `#failsafe` `#teste` `#adr`
+> Ver [[Questões em Aberto]] — inclui divergência no timeout de failsafe e o b

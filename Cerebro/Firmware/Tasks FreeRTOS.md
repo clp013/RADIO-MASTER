@@ -36,13 +36,7 @@ graph TD
 - `crsf_init(&huart1)`: guarda o handle, habilita modo receptor half-duplex, loga init.
 - `crsf_run()`: laço infinito — snapshot dos dados de controle, detecção de [[ADR-003 Estratégia de Failsafe|failsafe]], conversão µs→CRSF, `crsf_send_channels()`, envio de ACK e `osDelay` para fechar o período de [[Protocolo CRSF|~6.67 ms (150 Hz)]].
 
-> [!warning] Ponto de atenção — busy-wait dentro da task
-> `crsf_send_channels()` faz `while(!tx_done && (HAL_GetTick()-t)<2)` após `HAL_UART_Transmit_DMA`. É uma espera ocupada (até ~2 ms) numa task de **alta prioridade**, podendo "afamar" a defaultTask/USB. Registrado em [[Questões em Aberto]].
-
-## Configuração
-- Detalhes de heap, tick e asserts em `Core/Inc/FreeRTOSConfig.h`.
-- `configASSERT(idx == 22)` em `crsf_send_channels` valida o empacotamento de 16×11 bits.
-
-## Relacionadas
-- [[Arquitetura de Firmware]]
-- [[Driver CRSF]]
+> [!success] Sincronização de TX por notificação (resolvido 2026-06-25)
+> `crsf_send_channels()` não usa mais busy-wait. Após `HAL_UART_Transmit_DMA`, a task bloqueia em `ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2))`; o `HAL_UART_TxCpltCallback` (ISR do DMA) sinaliza com `vTaskNotifyGiveFromISR`. A CPU fica livre durante o DMA. O handle é capturado em `crsf_init` via `xTaskGetCurrentTaskHandle()`. Ver [[Driver CRSF]] e [[Questões em Aberto]] (Q2).
+>
+> Pré-requisitos confirmados na config: `INCLUDE_xTaskGetCurrentTaskHandle=1`, `configU

@@ -5,6 +5,8 @@
 #include "crsf.h"
 #include "debug.h"
 #include "cmsis_os.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "usbd_cdc_if.h"
 #include <string.h>
 #include <stdio.h>
@@ -22,12 +24,28 @@ static char             g_ack_buf[64];
 static volatile uint8_t g_ack_len     = 0;
 static volatile bool    g_ack_pending = false;
 
-/* Flag TX completo */
-static volatile bool tx_done = false;
+/* Handle da CRSF_task — usado para notificar fim de DMA a partir da ISR */
+static TaskHandle_t s_crsf_task = NULL;
 
 /* Failsafe — tick e sequência da última recepção USB válida */
 static volatile uint32_t g_last_rx_tick = 0;
 static volatile int32_t  g_last_seq     = -1;
+
+/* ─── Recepção de telemetria (RX) ───────────────────────────────── */
+#define CRSF_RX_DEBUG    1     /* 1 = loga frames recebidos na USART2 */
+#define CRSF_RX_HEXDUMP  0     /* 1 = inclui os bytes em hexadecimal   */
+#define RX_RING_SZ       256   /* potência de 2; preenchido na ISR     */
+
+static volatile uint8_t  rx_ring[RX_RING_SZ];
+static volatile uint16_t rx_head = 0;   /* escrito na ISR */
+static uint16_t          rx_tail = 0;   /* lido na task   */
+
+/* Parser de frames */
+typedef enum { RXS_SYNC = 0, RXS_LEN, RXS_DATA } rx_state_t;
+static rx_state_t rx_state = RXS_SYNC;
+static uint8_t    rx_frame[CRSF_MAX_PACKET_SIZE];
+static uint8_t    rx_flen  = 0;   /* valor do byte de length */
+static uint8_t    rx_fidx  = 0;   /* bytes já acumulados     */
 
 /* ─── CRC8 ───────────────────────────────────────────────────────── */
 static uint8_t crsf_crc8(const uint8_t *buf, uint8_t len)
@@ -97,18 +115,26 @@ void crsf_usb_receive(const char *json)
     }
 }
 
-/* ─── Callback TX CRSF ───────────────────────────────────────────── */
+/* ─── Callback TX CRSF — fim do DMA, contexto de interrupção ─────── */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART1) tx_done = true;
+    if (huart->Instance == USART1 && s_crsf_task != NULL) {
+        BaseType_t higher_woken = pdFALSE;
+        vTaskNotifyGiveFromISR(s_crsf_task, &higher_woken);
+        portYIELD_FROM_ISR(higher_woken);
+    }
 }
 
-/* ─── Inicialização ──────────────────────────────────────────────── */
+/* ─── Inicialização — chamado dentro da CRSF_task ────────────────── */
 void crsf_init(UART_HandleTypeDef *huart)
 {
-    _huart = huart;
+    _huart      = huart;
+    s_crsf_task = xTaskGetCurrentTaskHandle();   /* p/ notificação de fim de DMA */
     DBG_FMT("[CRSF] Init OK — %dHz\r\n", CRSF_RATE_HZ);
     HAL_HalfDuplex_EnableReceiver(_huart);
+    /* Habilita interrupção RXNE p/ telemetria (NVIC USART1 já ativo no MSP).
+     * A própria ISR (crsf_uart_irq_handler) lê DR antes da HAL, que vira no-op. */
+    __HAL_UART_ENABLE_IT(_huart, UART_IT_RXNE);
 }
 
 /* ─── Envio RC Channels ──────────────────────────────────────────── */
@@ -130,81 +156,34 @@ void crsf_send_channels(const uint16_t ch[16])
     }
     configASSERT(idx == 22); /* 16 ch × 11 bits = 176 bits = 22 bytes */
     buf[25] = crsf_crc8(&buf[2], 23);
-    tx_done = false;
+
+    /* Limpa notificação pendente antes de iniciar o DMA */
+    ulTaskNotifyTake(pdTRUE, 0);
     HAL_HalfDuplex_EnableTransmitter(_huart);
     HAL_UART_Transmit_DMA(_huart, buf, CRSF_RC_FRAME_SIZE);
-    uint32_t t = HAL_GetTick();
-    while (!tx_done && (HAL_GetTick() - t) < 2);
+    /* Bloqueia (sem busy-wait) até o TxCpltCallback notificar; timeout 2 ms */
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2));
     HAL_HalfDuplex_EnableReceiver(_huart);
 }
 
-/* ─── CRSF Task ──────────────────────────────────────────────────── */
-void crsf_run(void *arg)
+/* ─── ISR de RX — chamada por USART1_IRQHandler (stm32f1xx_it.c) ──
+ * Lê o byte em nível de registrador (limpa RXNE e flags de erro) e o
+ * empilha no ring buffer. Não usa a máquina de estados da HAL, evitando
+ * conflito com o TX por DMA / half-duplex. Roda em contexto de interrupção.
+ */
+void crsf_uart_irq_handler(void)
 {
-    DBG("[CRSF] task OK\r\n");
-
-    uint16_t ch[16];
-    for (int i = 0; i < 16; i++) ch[i] = CRSF_CH_MID;
-
-    bool     in_failsafe    = false;
-    int32_t  prev_seq       = -1;
-    uint32_t seq_repeat_cnt = 0;
-
-    for (;;) {
-        uint32_t t0 = HAL_GetTick();
-
-        taskENTER_CRITICAL();
-        int16_t  dir_snap      = g_direcao;
-        int16_t  thr_snap      = g_throttle;
-        uint32_t last_rx_snap  = g_last_rx_tick;
-        int32_t  seq_snap      = g_last_seq;
-        taskEXIT_CRITICAL();
-
-        /* Detecta seq congelado */
-        if (seq_snap == prev_seq) {
-            if (seq_repeat_cnt < CRSF_SEQ_REPEAT_MAX)
-                seq_repeat_cnt++;
-        } else {
-            prev_seq       = seq_snap;
-            seq_repeat_cnt = 0;
-        }
-
-        bool timeout    = (HAL_GetTick() - last_rx_snap) > CRSF_COMM_TIMEOUT_MS;
-        bool seq_frozen = (seq_repeat_cnt >= CRSF_SEQ_REPEAT_MAX);
-        bool failsafe   = timeout || seq_frozen;
-
-        if (failsafe) {
-            dir_snap = 1500;
-            thr_snap = 1500;
-            if (!in_failsafe) {
-                if (timeout)
-                    DBG("[CRSF] FAILSAFE — timeout de comunicacao\r\n");
-                else
-                    DBG("[CRSF] FAILSAFE — seq congelado\r\n");
-                in_failsafe = true;
-            }
-        } else {
-            if (in_failsafe) {
-                DBG("[CRSF] comunicacao restaurada\r\n");
-                in_failsafe = false;
+    uint32_t sr = USART1->SR;
+    if (sr & (USART_SR_RXNE | USART_SR_ORE | USART_SR_FE | USART_SR_NE | USART_SR_PE)) {
+        uint8_t b = (uint8_t)(USART1->DR);   /* leitura limpa RXNE + erros */
+        if (sr & USART_SR_RXNE) {
+            uint16_t next = (uint16_t)((rx_head + 1u) & (RX_RING_SZ - 1));
+            if (next != rx_tail) {           /* descarta se buffer cheio */
+                rx_ring[rx_head] = b;
+                rx_head = next;
             }
         }
-
-        ch[0] = crsf_from_us_dir(dir_snap);
-        ch[1] = crsf_from_us(thr_snap);
-        for (int i = 2; i < 16; i++) ch[i] = CRSF_CH_MID;
-        for (int i = 0; i < 2; i++){
-        DBG_FMT("CRSF CH[%d]: %d\n\r", i, ch[i]);}
-        crsf_send_channels(ch);
-
-        /* Envia ACK — fora da interrupção USB */
-        if (g_ack_pending) {
-            CDC_Transmit_FS((uint8_t *)g_ack_buf, g_ack_len);
-            g_ack_pending = false;
-        }
-
-        uint32_t elapsed = HAL_GetTick() - t0;
-        if (elapsed < CRSF_RATE_MS) osDelay(CRSF_RATE_MS - elapsed);
-        else osDelay(1);
     }
 }
+
+/* ─── Log de um frame recebido (USART2) ─────────

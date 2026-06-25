@@ -49,8 +49,10 @@ para cada byte b:
 - Taxa alvo **150 Hz** (`CRSF_RATE_HZ`) → período ~6,67 ms.
 - A 400 kbaud, 26 bytes ≈ 0,65 ms de transmissão → folga grande no período.
 
+> [!success] Endereço confirmado (2026-06-25)
+> O módulo usa **0xEE** (transmitter) — correto como está. Ver [[Log de Testes]].
+
 > [!question] A verificar com o módulo real
-> - O módulo aceita **0xEE** como endereço, ou espera **0xC8** (flight controller)? Confirmar em bancada — ver [[Log de Testes]].
 > - Taxa de pacotes suportada pelo link (50/150/250 Hz conforme ELRS).
 
 ## Relacionadas

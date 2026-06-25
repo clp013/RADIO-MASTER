@@ -24,11 +24,12 @@ created: 2026-06-25
 
 ---
 
-### 2026-06-25 — Criação do vault (sem bancada)
-- **Firmware/commit:** estado inicial importado (`Radio_Master.zip`)
-- **Objetivo:** registrar baseline do projeto antes dos testes.
-- **Resultado:** ⚠️ ainda não testado em hardware.
-- **Observações:** ver pendências em [[Questões em Aberto]] antes da primeira bancada — em especial o timeout de [[ADR-003 Estratégia de Failsafe|failsafe]].
-
-## Relacionadas
-- [[Plano de Testes]]
+### 2026-06-25 — RX-com-dump VALIDADO em bancada ✅
+- **Resultado:** ✅ recepção funcionando, **todos os frames com CRC OK** (nenhum ERR). Saída na USART2:
+  ```
+  [RX] type=0x3A len=13 crc=OK
+  [RX] type=0x14 len=12 crc=OK
+  [RX] type=0x08 len=10 crc=OK
+  ```
+- **Novo frame descoberto:** `0x08` Battery Sensor — **não** tinha aparecido no analisador. O dump no próprio MCU revelou mais que o analisador.
+- **Ordem real:** `0x3A`/`0x
