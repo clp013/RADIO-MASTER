@@ -17,6 +17,11 @@
 #define CRSF_RC_FRAME_SIZE      26
 #define CRSF_MAX_PACKET_SIZE    64
 
+/* Tipos de frame de telemetria (RX) */
+#define CRSF_TYPE_BATTERY       0x08
+#define CRSF_TYPE_LINK_STATS    0x14
+#define CRSF_TYPE_RADIO_ID      0x3A
+
 /* Valores de canal */
 #define CRSF_CH_MIN     192
 #define CRSF_CH_MID     992
@@ -25,8 +30,4 @@
 /* ─── API pública ────────────────────────────────────────────────── */
 void     crsf_init(UART_HandleTypeDef *huart);
 void     crsf_send_channels(const uint16_t ch[16]);
-void     crsf_run(void *arg);
-void     crsf_usb_receive(const char *json);
-void     crsf_uart_irq_handler(void);   /* chamada por USART1_IRQHandler */
-
-uint16_t crsf
+void     crsf
