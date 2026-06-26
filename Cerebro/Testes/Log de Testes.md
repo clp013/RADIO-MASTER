@@ -24,6 +24,17 @@ created: 2026-06-25
 
 ---
 
+### 2026-06-27 — "Congelamento" diagnosticado: era o caminho de envio ao PC
+- **Sintoma:** telemetria no PC "congelava" após rodar um tempo (valores parados); só voltava com reset.
+- **Investigação:** instrumentei `[ACK->PC]` + `[RXSTAT]` (isr/byte/ore/ok/err + `CR1`/`SR`). No congelamento: `[RXSTAT] isr=3773 byte=3773 ok=217 cr1=0x2024 sr=0x00D0` → **RX 100% saudável** (RE+RXNEIE ligados, sem ORE preso, frames sendo decodificados). O que estava "parado" eram os valores porque **`LQ=0%`** — o enlace de RF tinha caído. Reset do STM32 **não** trazia o LQ de volta (receptor pareado e ligado).
+- **Passo de isolamento:** revertido `crsf.c` p/ `a9d3b6b` (estado **pré-envio ao PC**: telemetria decodificada e logada na USART2, ACK simples na ISR, sem telemetria no ACK e sem debug).
+- **Resultado:** ✅ **com a base pré-PC, LQ=100% estável e telemetria viva** (BATT acompanhou 6.6→5.9→6.5→5.8; RSSI variando). 
+- **Conclusão:** o congelamento foi **introduzido pelo caminho de envio ao PC** — montar JSON grande de telemetria (e, nos builds de debug, log bloqueante `[ACK->PC]`) **por comando** dentro do laço de 150 Hz atropela a cadência dos canais → módulo perde o enlace (LQ→0). Não é bug de RX.
+- **Rigor pendente:** confirmar LQ=100% com a base simples **enquanto o PC envia comandos** (este log estava em FAILSAFE).
+- **Re-abordagem do envio ao PC:** enviar telemetria **periodicamente a baixa taxa**, desacoplada do caminho por-comando/canais, sem logs bloqueantes no laço quente.
+- **Implementado (2026-06-27):** payload de telemetria **separado, a ~1 Hz** (`g_tlm_buf`), enviado após `crsf_rx_poll()`, independente de comando/failsafe; ACK por-comando mantido leve. JSON ≈ 106 B. Ver [[Protocolo USB JSON]].
+- **Resultado:** ✅ **estável** — link 100% e telemetria viva no PC sob fluxo de comandos (sem o congelamento de antes). *Recomendado soak-test mais longo antes de declarar resolvido em definitivo, já que o congelamento anterior só aparecia após minutos.*
+
 ### 2026-06-26 — Envio de telemetria ao PC (ACK JSON) — sem bancada
 - **Arquivos:** `Core/Src/crsf.c`.
 - **O quê:** o ACK da USB agora carrega a telemetria (link stats + bateria). A montagem do ACK saiu da ISR do USB para a **CRSF_task** (a ISR só sinaliza `g_ack_pending`); a task lê `g_link`/`g_batt`, monta o JSON e envia por `CDC_Transmit_FS`. Buffer ampliado p/ 256; `g_ack_len` removido.
