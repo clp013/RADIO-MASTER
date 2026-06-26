@@ -24,6 +24,13 @@ created: 2026-06-25
 
 ---
 
+### 2026-06-28 — Sincronismo de fase (casamento de taxa) — ADR-005
+- **O quê:** o período do laço agora vem do `interval` do módulo (0x3A) com acumulador fracionário → taxa média 6.666 ms (150 Hz) em vez de ~166 Hz. Resolve [[Questões em Aberto|Q7]].
+- **Resultado:** ✅ fase **travada** — offset preso em ~−300 µs (antes varria ±6 ms continuamente). LQ 100%, rearm=0.
+- **Descoberta-chave:** os "picos" de +4000 µs no offset eram **artefato do próprio debug** — um log bloqueante de ~5 ms atrasava 1 pacote ~2,3 ms, o que vira **+4,3 ms adiantado para a janela seguinte** (wrap-around). O `min` (~−300 µs, pacotes não-perturbados) é a fase real. Confirmado medindo avg/min/max do offset por segundo.
+- **Decisão:** correção ativa (Passo 2) **dispensada** — ganho marginal e perseguiria o artefato do log. Debug verboso (`CRSF_RX_DEBUG=0`); `[TLM] OK` e as estatísticas removidos; `[CRSF]` enxuto.
+- **Limite:** precisão ~±1 ms (tick do FreeRTOS); µs exigiria DWT/timer de hardware (não justificado). Ver [[ADR-005 Sincronismo de Fase (casamento de taxa)]].
+
 ### 2026-06-28 — Watchdog de RX + reforço de RXNEIE (corrige o congelamento de RX)
 - **Pista decisiva:** no congelamento, a USART2 só mostrava `[CRSF]` — `[LINK]/[BATT]` paravam. Logo: laço vivo, **recepção morta**. Como `crsf_send_channels` re-liga `RE` todo ciclo mas **não** o `RXNEIE`, a hipótese foi: algo (corrida de ORE na `HAL_UART_IRQHandler`) limpa o `RXNEIE` → RX morto até reset.
 - **Correções (`crsf.c`):**

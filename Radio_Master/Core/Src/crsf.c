@@ -35,7 +35,7 @@ static volatile uint32_t g_last_rx_tick = 0;
 static volatile int32_t  g_last_seq     = -1;
 
 /* ─── Recepção de telemetria (RX) ───────────────────────────────── */
-#define CRSF_RX_DEBUG        1   /* 1 = loga telemetria na USART2          */
+#define CRSF_RX_DEBUG        0   /* 1 = loga telemetria por-frame na USART2 (gera jitter no laço!) */
 #define CRSF_RX_DUMP_OTHERS  0   /* 1 = loga [RX] genérico p/ tipos s/ decode */
 #define CRSF_RX_HEXDUMP      0   /* 1 = inclui os bytes em hexadecimal     */
 #define RX_RING_SZ           256 /* potência de 2; preenchido na ISR       */
@@ -398,6 +398,7 @@ void crsf_run(void *arg)
     uint32_t rx_prev        = 0;   /* watchdog de RX: snapshot de rx_byte_cnt */
     uint32_t rx_idle        = 0;   /* ciclos sem byte novo                    */
     uint32_t rx_rearm_cnt   = 0;   /* quantas vezes re-armou o RX             */
+    uint32_t frac_us        = 0;   /* acumulador fracionário p/ casar a taxa do módulo */
 
     for (;;) {
         uint32_t t0 = HAL_GetTick();
@@ -443,19 +444,21 @@ void crsf_run(void *arg)
         ch[1] = crsf_from_us(thr_snap);
         for (int i = 2; i < 16; i++) ch[i] = CRSF_CH_MID;
 
-        /* Log throttled (~1 Hz) — não floodar o laço de 150 Hz */
-        if (++log_cnt >= CRSF_RATE_HZ) {
-            log_cnt = 0;
-            DBG_FMT("[CRSF] CH0=%u CH1=%u rearm=%u%s\r\n",
-                    ch[0], ch[1], (unsigned)rx_rearm_cnt, in_failsafe ? " (FAILSAFE)" : "");
-        }
-
-        crsf_send_channels(ch);
+        crsf_send_channels(ch);   /* TX cedo e determinístico — minimiza jitter de fase */
 
         /* Envia ACK — fora da interrupção USB */
         if (g_ack_pending) {
             CDC_Transmit_FS((uint8_t *)g_ack_buf, g_ack_len);
             g_ack_pending = false;
+        }
+
+        /* Heartbeat ~1 Hz — DEPOIS do TX, p/ não atrasar o envio dos canais.
+         * lq = link quality; off = offset de fase (amostra); rearm = re-arms do RX. */
+        if (++log_cnt >= CRSF_RATE_HZ) {
+            log_cnt = 0;
+            DBG_FMT("[CRSF] lq=%u off=%dus rearm=%u%s\r\n",
+                    g_link.up_lq, (int)(g_timing.offset_100ns / 10),
+                    (unsigned)rx_rearm_cnt, in_failsafe ? " (FAILSAFE)" : "");
         }
 
         /* Drena e parseia a telemetria recebida na janela anterior */
@@ -479,7 +482,6 @@ void crsf_run(void *arg)
          * A 1 Hz o custo é desprezível → não perturba a cadência de 150 Hz dos canais. */
         if (++tlm_cnt >= CRSF_RATE_HZ) {
             tlm_cnt = 0;
-            DBG_FMT("[TLM] OK\r\n");
             int m = snprintf(g_tlm_buf, sizeof(g_tlm_buf),
                 "{\"tlm\":%u,\"lq\":%u,\"v\":%d.%d,\"pwr\":%u}\n",
                 (unsigned)(g_link.valid ? 1 : 0),
@@ -492,8 +494,22 @@ void crsf_run(void *arg)
             }
         }
 
+        /* ── Sincronismo de fase: casar a TAXA do módulo (ADR-005) ──
+         * Usa o `interval` que o módulo informa (0x3A) em vez do 1000/150=6 ms
+         * truncado. Acumulador fracionário → taxa média = 6.666 ms (150 Hz).
+         * Isso por si só TRAVA a fase (offset fica preso perto de zero, ~-300 µs)
+         * em vez de "varrer" um período inteiro. Correção ativa pelo offset não
+         * foi necessária (ganho marginal; os "picos" eram artefato do debug). */
+        uint32_t interval_us = (g_timing.valid && g_timing.interval_100ns >= 10000)
+                               ? (g_timing.interval_100ns / 10)
+                               : (1000000UL / CRSF_RATE_HZ);
+        frac_us += interval_us;
+        uint32_t period_ms = frac_us / 1000;   /* parte inteira (ms) deste ciclo */
+        frac_us %= 1000;                       /* carrega o resto p/ o próximo   */
+        if (period_ms == 0) period_ms = 1;
+
         uint32_t elapsed = HAL_GetTick() - t0;
-        if (elapsed < CRSF_RATE_MS) osDelay(CRSF_RATE_MS - elapsed);
+        if (elapsed < period_ms) osDelay(period_ms - elapsed);
         else osDelay(1);
     }
 }
