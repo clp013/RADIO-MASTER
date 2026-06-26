@@ -43,6 +43,7 @@ static volatile int32_t  g_last_seq     = -1;
 static volatile uint8_t  rx_ring[RX_RING_SZ];
 static volatile uint16_t rx_head = 0;   /* escrito na ISR */
 static uint16_t          rx_tail = 0;   /* lido na task   */
+static volatile uint32_t rx_byte_cnt = 0; /* bytes recebidos — p/ watchdog de RX */
 
 /* Última telemetria de Link Statistics (0x14) decodificada — pronta p/ USB */
 typedef struct {
@@ -201,6 +202,9 @@ void crsf_send_channels(const uint16_t ch[16])
     /* Bloqueia (sem busy-wait) até o TxCpltCallback notificar; timeout 2 ms */
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2));
     HAL_HalfDuplex_EnableReceiver(_huart);
+    /* Reforça RXNEIE a cada ciclo: o EnableReceiver só restaura RE; se algo
+     * limpar RXNEIE (corrida de ORE na HAL), o RX morreria até reset. */
+    __HAL_UART_ENABLE_IT(_huart, UART_IT_RXNE);
 }
 
 /* ─── ISR de RX — chamada por USART1_IRQHandler (stm32f1xx_it.c) ──
@@ -218,6 +222,7 @@ void crsf_uart_irq_handler(void)
             if (next != rx_tail) {           /* descarta se buffer cheio */
                 rx_ring[rx_head] = b;
                 rx_head = next;
+                rx_byte_cnt++;
             }
         }
     }
@@ -390,6 +395,9 @@ void crsf_run(void *arg)
     uint32_t seq_repeat_cnt = 0;
     uint32_t log_cnt        = 0;   /* limita o log de canais a ~1 Hz */
     uint32_t tlm_cnt        = 0;   /* envio de telemetria ao PC a ~1 Hz */
+    uint32_t rx_prev        = 0;   /* watchdog de RX: snapshot de rx_byte_cnt */
+    uint32_t rx_idle        = 0;   /* ciclos sem byte novo                    */
+    uint32_t rx_rearm_cnt   = 0;   /* quantas vezes re-armou o RX             */
 
     for (;;) {
         uint32_t t0 = HAL_GetTick();
@@ -438,8 +446,8 @@ void crsf_run(void *arg)
         /* Log throttled (~1 Hz) — não floodar o laço de 150 Hz */
         if (++log_cnt >= CRSF_RATE_HZ) {
             log_cnt = 0;
-            DBG_FMT("[CRSF] CH0=%u CH1=%u%s\r\n",
-                    ch[0], ch[1], in_failsafe ? " (FAILSAFE)" : "");
+            DBG_FMT("[CRSF] CH0=%u CH1=%u rearm=%u%s\r\n",
+                    ch[0], ch[1], (unsigned)rx_rearm_cnt, in_failsafe ? " (FAILSAFE)" : "");
         }
 
         crsf_send_channels(ch);
@@ -453,17 +461,31 @@ void crsf_run(void *arg)
         /* Drena e parseia a telemetria recebida na janela anterior */
         crsf_rx_poll();
 
+        /* Watchdog de RX: se nenhum byte chegar por ~1 s, re-arma a recepção.
+         * Em operação normal nunca dispara (telemetria chega a cada ~200 ms);
+         * só age se o RX travou — recupera sem precisar de reset. */
+        if (rx_byte_cnt != rx_prev) {
+            rx_prev = rx_byte_cnt;
+            rx_idle = 0;
+        } else if (++rx_idle >= CRSF_RATE_HZ) {
+            rx_idle = 0;
+            volatile uint32_t tmp = USART1->SR; tmp = USART1->DR; (void)tmp;  /* limpa ORE */
+            HAL_HalfDuplex_EnableReceiver(_huart);
+            __HAL_UART_ENABLE_IT(_huart, UART_IT_RXNE);
+            rx_rearm_cnt++;
+        }
+
         /* Telemetria → PC: payload separado a ~1 Hz, independente de comandos/failsafe.
          * A 1 Hz o custo é desprezível → não perturba a cadência de 150 Hz dos canais. */
         if (++tlm_cnt >= CRSF_RATE_HZ) {
             tlm_cnt = 0;
+            DBG_FMT("[TLM] OK\r\n");
             int m = snprintf(g_tlm_buf, sizeof(g_tlm_buf),
-                "{\"tlm\":%u,\"lq_u\":%u,\"lq_d\":%u,\"rssi_u\":%d,\"rssi_d\":%d,"
-                "\"snr_u\":%d,\"snr_d\":%d,\"pwr\":%u,\"v\":%d.%d,\"pct\":%u}\n",
+                "{\"tlm\":%u,\"lq\":%u,\"v\":%d.%d,\"pwr\":%u}\n",
                 (unsigned)(g_link.valid ? 1 : 0),
-                g_link.up_lq, g_link.down_lq, g_link.up_rssi1, g_link.down_rssi,
-                g_link.up_snr, g_link.down_snr, g_link.up_power_mw,
-                g_batt.voltage_dv / 10, abs(g_batt.voltage_dv % 10), g_batt.remaining);
+                g_link.up_lq,
+                g_batt.voltage_dv / 10, abs(g_batt.voltage_dv % 10),
+                g_link.up_power_mw);
             if (m > 0) {
                 if (m >= (int)sizeof(g_tlm_buf)) m = sizeof(g_tlm_buf) - 1;
                 CDC_Transmit_FS((uint8_t *)g_tlm_buf, (uint16_t)m);

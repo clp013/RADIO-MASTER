@@ -24,6 +24,15 @@ created: 2026-06-25
 
 ---
 
+### 2026-06-28 — Watchdog de RX + reforço de RXNEIE (corrige o congelamento de RX)
+- **Pista decisiva:** no congelamento, a USART2 só mostrava `[CRSF]` — `[LINK]/[BATT]` paravam. Logo: laço vivo, **recepção morta**. Como `crsf_send_channels` re-liga `RE` todo ciclo mas **não** o `RXNEIE`, a hipótese foi: algo (corrida de ORE na `HAL_UART_IRQHandler`) limpa o `RXNEIE` → RX morto até reset.
+- **Correções (`crsf.c`):**
+  1. **Reforço de `RXNEIE` a cada ciclo** em `crsf_send_channels` (após `EnableReceiver`) — impede o RX de morrer.
+  2. **Watchdog de RX**: sem byte por ~1 s → re-arma (limpa ORE + `EnableReceiver` + `RXNEIE`); conta `rearm` no log `[CRSF]`. Nunca dispara em operação normal (telemetria a cada ~200 ms).
+  3. **Payload de telemetria reduzido** a `{"tlm","lq","v","pwr"}` (~37 B) — só link, tensão e potência (pedido do usuário).
+- **Resultado:** ✅ **resolvido** — sem congelamento; telemetria viva e estável (LQ 100/100, RSSI variando, bateria acompanhando). **`rearm=0`** o tempo todo → o **reforço de RXNEIE a cada ciclo bastou** (RX nunca morreu); o watchdog não precisou agir.
+- **Causa raiz confirmada:** o `RXNEIE` estava sendo limpo (corrida de ORE na `HAL_UART_IRQHandler`); como o `EnableReceiver` por ciclo só restaura `RE`, o RX morria até reset. Restaurar `RXNEIE` por ciclo corrige na origem.
+
 ### 2026-06-27 — "Congelamento" diagnosticado: era o caminho de envio ao PC
 - **Sintoma:** telemetria no PC "congelava" após rodar um tempo (valores parados); só voltava com reset.
 - **Investigação:** instrumentei `[ACK->PC]` + `[RXSTAT]` (isr/byte/ore/ok/err + `CR1`/`SR`). No congelamento: `[RXSTAT] isr=3773 byte=3773 ok=217 cr1=0x2024 sr=0x00D0` → **RX 100% saudável** (RE+RXNEIE ligados, sem ORE preso, frames sendo decodificados). O que estava "parado" eram os valores porque **`LQ=0%`** — o enlace de RF tinha caído. Reset do STM32 **não** trazia o LQ de volta (receptor pareado e ligado).
