@@ -52,6 +52,7 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 - [[ADR-002 Host envia JSON via USB CDC]]
 - [[ADR-003 Estratégia de Failsafe]]
 - [[ADR-004 Recepção de Telemetria (modo dump)]]
+- [[ADR-005 Sincronismo de Fase (casamento de taxa)]]
 - [[ADR-006 Robustez de RX (reforço de RXNEIE + watchdog)]]
 
 ### Testes
@@ -75,7 +76,7 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 > - **Telemetria exportada ao PC** no ACK JSON da USB ([[Protocolo USB JSON]])
 
 > [!todo] Pendências conhecidas
-> Ver [[Questões em Aberto]]. Bugs principais já resolvidos. Em aberto (não-crítico): **sincronismo de fase** (ADR-005, usa o `offset` do timing) e observações menores (Q6/Q7).
+> Ver [[Questões em Aberto]]. Bugs principais, telemetria e **sincronismo de fase** (ADR-005) resolvidos. Em aberto (não-crítico): apenas Q6 (`debug_init()` vazio).
 
 ## 🏷️ Tags principais
 
