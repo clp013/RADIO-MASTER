@@ -52,6 +52,7 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 - [[ADR-002 Host envia JSON via USB CDC]]
 - [[ADR-003 Estratégia de Failsafe]]
 - [[ADR-004 Recepção de Telemetria (modo dump)]]
+- [[ADR-006 Robustez de RX (reforço de RXNEIE + watchdog)]]
 
 ### Testes
 - [[Plano de Testes]]
