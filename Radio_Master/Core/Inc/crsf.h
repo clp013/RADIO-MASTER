@@ -30,4 +30,11 @@
 /* ─── API pública ────────────────────────────────────────────────── */
 void     crsf_init(UART_HandleTypeDef *huart);
 void     crsf_send_channels(const uint16_t ch[16]);
-void     crsf
+void     crsf_run(void *arg);
+void     crsf_usb_receive(const char *json);
+void     crsf_uart_irq_handler(void);   /* chamada por USART1_IRQHandler */
+
+uint16_t crsf_from_us(int16_t us);
+uint16_t crsf_from_us_dir(int16_t us);
+
+#endif /* CRSF_H */

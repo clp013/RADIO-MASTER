@@ -22,5 +22,14 @@ Itens detectados na leitura do código (2026-06-25). Cada um deve virar uma corr
 > [!success] Q4 — Endereço/sync CRSF ✅ CONFIRMADO (2026-06-25)
 > `CRSF_SYNC_BYTE = 0xEE` está **correto** para o módulo alvo (endereço transmitter). Nenhuma alteração necessária. → [[Protocolo CRSF]]
 
-> [!success] Q5 — Telemetria (RX) — RECEPÇÃO FUNCIONANDO (2026-06-25)
-> RX implementado e **validado em bancada** ([[ADR-004 Recepção de Telemetria (modo dump)]]). Frames reais confirmados: `0x3A` (timing), `0x14` (link stats), `0x08` (battery) — todos CRC OK. Falta o **parse estruturado** dos payloads e expô-los (próxima etapa). Lição: não diagnosticar RX com o analisador na linha (interfere). → [[Telemetria CRSF (RX)]]
+> [!success] Q5 — Telemetria (RX) — CONCLUÍDA (2026-06-26)
+> Pipeline completo e validado: RX ([[ADR-004 Recepção de Telemetria (modo dump)]]) → parse estruturado de `0x14`/`0x08`/`0x3A` (structs `g_link`/`g_batt`/`g_timing`) → **exportada ao PC** no ACK JSON da USB ([[Protocolo USB JSON]]). Lição: não diagnosticar RX com o analisador na linha (interfere). Resta opcional: **sincronismo de fase** usando o `offset` do timing → ADR-005.
+
+> [!note] Q6 — `debug_init()` vazio
+> `debug_init()` não configura nada (USART2 é init via HAL em `main`). Verificar se é intencional manter a função como placeholder.
+
+> [!note] Q7 — Granularidade do tick vs período
+> `CRSF_RATE_MS = 1000/150 = 6` (trunca 6,67). Período real ~6 ms → ~166 Hz, não 150 Hz exato. Avaliar se importa para o link.
+
+## Relacionadas
+- [[🧠 MOC - Cérebro RADIO_MASTER]] · [[Plano de Testes]]

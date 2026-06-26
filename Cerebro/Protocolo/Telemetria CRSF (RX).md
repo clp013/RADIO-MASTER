@@ -171,4 +171,9 @@ A forma confiável de saber o que o Ranger Nano envia é um **modo diagnóstico*
 
 Assim a lista acima deixa de ser teórica. O desenho dessa recepção está em [[Recepção CRSF Half-Duplex]].
 
-## Rela
+## Relacionadas
+- [[Protocolo CRSF]] · [[Driver CRSF]] · [[Recepção CRSF Half-Duplex]] · [[Questões em Aberto]]
+
+## Fontes
+- [TBS CRSF spec (oficial)](https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md)
+- [ExpressLRS crsf_protocol.h](https://github.com/ExpressLRS/ExpressLRS/blob/master/src/lib/CrsfProtocol/crsf_protocol.h)
