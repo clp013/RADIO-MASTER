@@ -67,4 +67,7 @@ sequenceDiagram
 > [!success] Itens resolvidos (2026-06-25)
 > - Timeout de failsafe = 1 s. Ver [[ADR-003 Estratégia de Failsafe]].
 > - Busy-wait pós-DMA → substituído por notificação de tarefa (`vTaskNotifyGiveFromISR` / `ulTaskNotifyTake`). Ver [[Tasks FreeRTOS]] e [[Questões em Aberto]] (Q2).
-> - Logs do laço de 150 Hz → throttled a ~1 Hz (Q
+> - Logs do laço de 150 Hz → throttled a ~1 Hz (Q3).
+
+## Relacionadas
+- [[Protocolo CRSF]] · [[Protocolo USB JSON]] · [[ADR-001 Transporte CRSF por USART1 Half-Duplex]]

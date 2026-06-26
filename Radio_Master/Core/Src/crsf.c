@@ -19,10 +19,9 @@ static UART_HandleTypeDef *_huart;
 static volatile int16_t g_direcao  = 1500;
 static volatile int16_t g_throttle = 1500;
 
-/* ACK — montado na interrupção, enviado pela task */
-static char             g_ack_buf[64];
-static volatile uint8_t g_ack_len     = 0;
-static volatile bool    g_ack_pending = false;
+/* ACK + telemetria — sinalizado na ISR, montado e enviado pela task */
+static char          g_ack_buf[256];
+static volatile bool g_ack_pending = false;
 
 /* Handle da CRSF_task — usado para notificar fim de DMA a partir da ISR */
 static TaskHandle_t s_crsf_task = NULL;
@@ -138,15 +137,8 @@ void crsf_usb_receive(const char *json)
     g_last_rx_tick = HAL_GetTick();
     g_last_seq     = (int32_t)seq;
 
-    /* Prepara ACK simples */
-    if (!g_ack_pending) {
-        int ack_result = snprintf(g_ack_buf, sizeof(g_ack_buf),
-            "{\"direcao\":%d,\"throttle\":%d,\"seq\":%d,\"ok\":1}\n", dir, thr, seq);
-        if (ack_result > 0 && ack_result < (int)sizeof(g_ack_buf)) {
-            g_ack_len = (uint8_t)ack_result;
-            g_ack_pending = true;
-        }
-    }
+    /* Sinaliza à task: há comando novo → ela monta o ACK+telemetria (fora da ISR) */
+    g_ack_pending = true;
 }
 
 /* ─── Callback TX CRSF — fim do DMA, contexto de interrupção ─────── */
@@ -440,10 +432,29 @@ void crsf_run(void *arg)
 
         crsf_send_channels(ch);
 
-        /* Envia ACK — fora da interrupção USB */
+        /* Monta e envia ACK + telemetria — fora da interrupção USB */
         if (g_ack_pending) {
-            CDC_Transmit_FS((uint8_t *)g_ack_buf, g_ack_len);
             g_ack_pending = false;
+
+            taskENTER_CRITICAL();
+            int a_dir = g_direcao;
+            int a_thr = g_throttle;
+            int a_seq = (int)g_last_seq;
+            taskEXIT_CRITICAL();
+
+            int n = snprintf(g_ack_buf, sizeof(g_ack_buf),
+                "{\"direcao\":%d,\"throttle\":%d,\"seq\":%d,\"ok\":1,\"tlm\":%u,"
+                "\"lq_u\":%u,\"lq_d\":%u,\"rssi_u\":%d,\"rssi_d\":%d,"
+                "\"snr_u\":%d,\"snr_d\":%d,\"pwr\":%u,"
+                "\"v\":%d.%d,\"pct\":%u}\n",
+                a_dir, a_thr, a_seq, (unsigned)(g_link.valid ? 1 : 0),
+                g_link.up_lq, g_link.down_lq, g_link.up_rssi1, g_link.down_rssi,
+                g_link.up_snr, g_link.down_snr, g_link.up_power_mw,
+                g_batt.voltage_dv / 10, abs(g_batt.voltage_dv % 10), g_batt.remaining);
+            if (n > 0) {
+                if (n >= (int)sizeof(g_ack_buf)) n = sizeof(g_ack_buf) - 1;
+                CDC_Transmit_FS((uint8_t *)g_ack_buf, (uint16_t)n);
+            }
         }
 
         /* Drena e parseia a telemetria recebida na janela anterior */

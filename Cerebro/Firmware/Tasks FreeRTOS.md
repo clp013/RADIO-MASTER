@@ -39,4 +39,12 @@ graph TD
 > [!success] Sincronização de TX por notificação (resolvido 2026-06-25)
 > `crsf_send_channels()` não usa mais busy-wait. Após `HAL_UART_Transmit_DMA`, a task bloqueia em `ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2))`; o `HAL_UART_TxCpltCallback` (ISR do DMA) sinaliza com `vTaskNotifyGiveFromISR`. A CPU fica livre durante o DMA. O handle é capturado em `crsf_init` via `xTaskGetCurrentTaskHandle()`. Ver [[Driver CRSF]] e [[Questões em Aberto]] (Q2).
 >
-> Pré-requisitos confirmados na config: `INCLUDE_xTaskGetCurrentTaskHandle=1`, `configU
+> Pré-requisitos confirmados na config: `INCLUDE_xTaskGetCurrentTaskHandle=1`, `configUSE_MUTEXES=1`, notificações habilitadas, e IRQ do DMA em prioridade 5 = `configMAX_SYSCALL_INTERRUPT_PRIORITY`.
+
+## Configuração
+- Detalhes de heap, tick e asserts em `Core/Inc/FreeRTOSConfig.h`.
+- `configASSERT(idx == 22)` em `crsf_send_channels` valida o empacotamento de 16×11 bits.
+
+## Relacionadas
+- [[Arquitetura de Firmware]]
+- [[Driver CRSF]]

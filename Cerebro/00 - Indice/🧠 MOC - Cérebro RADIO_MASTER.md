@@ -19,6 +19,9 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 
 ## 🗺️ Mapa do vault
 
+### Processo
+- [[Ritual de Sessão]] — checklist de início e encerramento
+
 ### Contexto
 - [[Visão Geral do Projeto]]
 - [[Glossário]]
@@ -58,16 +61,21 @@ Vault central de contexto, decisões técnicas, testes e conteúdo técnico do f
 - [[Referências]]
 - [[Questões em Aberto]]
 
-## ✅ Estado atual (2026-06-25)
+## ✅ Estado atual (2026-06-26)
 
 > [!success] Implementado
 > - Esqueleto CubeMX + CMake + FreeRTOS (CMSIS-RTOS v2)
 > - Clock 72 MHz (HSE 8 MHz ×9), USB 48 MHz
 > - USART1 half-duplex 400000 baud + DMA TX → CRSF
 > - USART2 115200 → debug bloqueante
-> - USB CDC: recebe JSON, devolve ACK
 > - Task CRSF a 150 Hz, 2 canais ativos (direção + throttle)
-> - Failsafe por timeout e por `seq` congelado
+> - Failsafe (timeout 1 s + `seq` congelado); TX por notificação de tarefa
+> - **Telemetria RX completa**: `0x14`/`0x08`/`0x3A` recebidos, decodificados e logados na USART2
+> - **Telemetria exportada ao PC** no ACK JSON da USB ([[Protocolo USB JSON]])
 
 > [!todo] Pendências conhecidas
-> Ver [[Questões em Aberto]] — inclui divergência no timeout de failsafe e o b
+> Ver [[Questões em Aberto]]. Bugs principais já resolvidos. Em aberto (não-crítico): **sincronismo de fase** (ADR-005, usa o `offset` do timing) e observações menores (Q6/Q7).
+
+## 🏷️ Tags principais
+
+`#hardware` `#firmware` `#protocolo/crsf` `#protocolo/usb` `#freertos` `#failsafe` `#teste` `#adr`
