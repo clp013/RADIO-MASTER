@@ -22,15 +22,23 @@ Comandos enviados pelo host pela [[USB CDC (VCP)|porta serial virtual]], uma lin
 - Valores fora da faixa são **saturados** no firmware (`crsf_usb_receive`).
 - Parse é manual (`json_get_int`) — tolera espaços após `:`, ignora chaves desconhecidas.
 
-## ACK + telemetria (placa → host)
-Desde 2026-06-26 o ACK carrega a **telemetria** do Ranger Nano (piggyback no mesmo JSON):
+## Saídas placa → host (dois payloads distintos)
+
+> [!warning] Revisão 2026-06-27 — telemetria separada do ACK
+> A 1ª tentativa embutia a telemetria no ACK **a cada comando**; isso (JSON grande no laço quente) atrapalhava a cadência de 150 Hz e derrubava o enlace de RF (LQ→0). Revertido. Agora há **dois payloads independentes**.
+
+### 1) ACK do comando (request-response, leve)
+Montado na ISR do USB, enviado pela task após cada comando:
 ```json
-{"direcao":1600,"throttle":1700,"seq":42,"ok":1,"tlm":1,
- "lq_u":100,"lq_d":100,"rssi_u":-31,"rssi_d":-40,
- "snr_u":14,"snr_d":13,"pwr":250,"v":5.8,"pct":0}
+{"direcao":1600,"throttle":1700,"seq":42,"ok":1}
 ```
-- Enviado pela [[Tasks FreeRTOS|CRSF_task]] após cada comando recebido (request-response). A ISR do USB só sinaliza; a task **monta e envia** (sem corrida com os structs de telemetria).
-- Eco dos valores aceitos + `"ok":1`.
+Apenas eco do comando + `"ok":1`. Sem telemetria.
+
+### 2) Telemetria (periódico, ~1 Hz, independente de comando/failsafe)
+Montado e enviado pela [[Tasks FreeRTOS|CRSF_task]] uma vez por segundo, **desacoplado** do caminho por-comando:
+```json
+{"tlm":1,"lq_u":100,"lq_d":100,"rssi_u":-42,"rssi_d":-49,"snr_u":14,"snr_d":13,"pwr":250,"v":5.8,"pct":0}
+```
 
 | Campo | Origem | Significado |
 |-------|--------|-------------|
@@ -42,8 +50,9 @@ Desde 2026-06-26 o ACK carrega a **telemetria** do Ranger Nano (piggyback no mes
 | `v` | 0x08 | tensão da bateria (V, 1 casa) |
 | `pct` | 0x08 | bateria restante (%) |
 
-> [!note] Tamanho
-> JSON ≈ 150–175 bytes (buffer 256). Sem floats no firmware: `v` é montado como `%d.%d` (decivolts). Campos zerados com `tlm:0` = telemetria ainda não recebida.
+- O host distingue os dois pela presença de `lq_u` (telemetria) vs `direcao` (ACK).
+- JSON da telemetria ≈ 106 B (buffer 160). Sem floats: `v` montado como `%d.%d` (decivolts).
+- **Lição:** trabalho pesado por-comando no laço de 150 Hz derruba o enlace; telemetria a baixa taxa e desacoplada resolve. Ver [[Log de Testes]] 2026-06-27.
 
 ## Regras importantes
 > [!important] Terminador `\n` obrigatório
