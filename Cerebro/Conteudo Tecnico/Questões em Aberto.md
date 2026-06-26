@@ -28,8 +28,8 @@ Itens detectados na leitura do código (2026-06-25). Cada um deve virar uma corr
 > [!note] Q6 — `debug_init()` vazio
 > `debug_init()` não configura nada (USART2 é init via HAL em `main`). Verificar se é intencional manter a função como placeholder.
 
-> [!note] Q7 — Granularidade do tick vs período
-> `CRSF_RATE_MS = 1000/150 = 6` (trunca 6,67). Período real ~6 ms → ~166 Hz, não 150 Hz exato. Avaliar se importa para o link.
+> [!success] Q7 — Taxa real de 150 Hz ✅ RESOLVIDO (2026-06-28)
+> Era `CRSF_RATE_MS = 1000/150 = 6` (~166 Hz). Agora o período vem do `interval` do módulo (0x3A) com acumulador fracionário → média 6.666 ms (150 Hz). Isso casou a taxa e **travou a fase** (offset preso em ~−300 µs em vez de varrer ±6 ms). Ver [[ADR-005 Sincronismo de Fase (casamento de taxa)]].
 
 ## Relacionadas
 - [[🧠 MOC - Cérebro RADIO_MASTER]] · [[Plano de Testes]]
